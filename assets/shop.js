@@ -1,3 +1,44 @@
+$.fn.serializeAssoc = function () {
+    var data = {};
+    $.each(this.serializeArray(), function (key, obj) {
+        var a = obj.name.match(/(.*?)\[(.*?)\]/);
+        if (a !== null) {
+            var subName = a[1];
+            var subKey = a[2];
+
+            if (!data[subName]) {
+                data[subName] = [];
+            }
+
+            if (!subKey.length) {
+                subKey = data[subName].length;
+            }
+
+            if (data[subName][subKey]) {
+                if ($.isArray(data[subName][subKey])) {
+                    data[subName][subKey].push(obj.value);
+                } else {
+                    data[subName][subKey] = [];
+                    data[subName][subKey].push(obj.value);
+                }
+            } else {
+                data[subName][subKey] = obj.value;
+            }
+        } else {
+            if (data[obj.name]) {
+                if ($.isArray(data[obj.name])) {
+                    data[obj.name].push(obj.value);
+                } else {
+                    data[obj.name] = [];
+                    data[obj.name].push(obj.value);
+                }
+            } else {
+                data[obj.name] = obj.value;
+            }
+        }
+    });
+    return data;
+};
 
 window.__ecomm = {
     cleanKeys: function(key) {
@@ -15,7 +56,7 @@ window.__ecomm = {
         }
     },
     getItem: function(key) {
-        return JSON.parse(window.localStorage.getItem(key));
+        return window.localStorage.getItem(key) ? JSON.parse(window.localStorage.getItem(key), []) : [];
     },
     setItem: function(key, data) {
         window.localStorage.setItem(key, JSON.stringify(data));
@@ -164,6 +205,7 @@ window.shop = {
 }
 
 window.addEventListener('load', function(e) {
+    window.shop.cart.refreshCartUi();
 
     var productsContainer = jQuery('#products');
     if (productsContainer) {
@@ -199,7 +241,93 @@ window.addEventListener('load', function(e) {
     }
 
     
-    window.shop.cart.refreshCartUi();
+    var checkout = jQuery('#checkout');
+    if (checkout.length > 0) {
+        var itemTemplate = jQuery('#checkout_product-cart_item-template');
+        var cartItems = window.__ecomm.getItem('cart_items');
+        cartItems.forEach(element => {
+            var item = String(itemTemplate.text());
+            item = item.replace('{{image}}', element.image)
+            .replace('{{quantity}}', element.quantity)
+            .replace('{{items_price}}', (element.quantity * element.price).toFixed(2))
+            .replace('{{id}}', element.id)
+            .replace('{{id}}', element.id)
+            .replace('{{id}}', element.id)
+            .replace('{{title}}', element.name)
+            .replace('{{price}}', element.price);
+    
+            checkout.find('ul.checkout_cart').append(item);
+        });
+
+        jQuery('#checkout-form').submit(function(e) {
+            e.preventDefault();
+
+            var orderHash = makeid(10);
+            jQuery('#order_hash').val(orderHash);
+            window.__ecomm.setItem('cart_' + orderHash, {
+                items: window.__ecomm.getItem('cart_items'),
+                customer: jQuery('form').serializeAssoc(),
+            });
+
+            window.location.href = "thankyou.html?key=" + orderHash 
+
+            return false;
+        })
+    }
+
+    
+    var thankyou = jQuery('#thankyou');
+    if (thankyou.length > 0) {
+        var itemTemplate = jQuery('#thankyou_product-cart_item-template');
+        var cartItems = window.__ecomm.getItem('cart_items');
+        var index = 1;
+        var GetParams = getParams();
+
+        if (GetParams.key && window.__ecomm.getItem('cart_' + GetParams.key)) {
+            var checkoutData = window.__ecomm.getItem('cart_' + GetParams.key);
+            var customerInfo = checkoutData.customer;
+            var cartItems = checkoutData.items;
+            jQuery(".thankyou_customer-name").html(decodeURI(customerInfo.firstName ? customerInfo.firstName.replaceAll('+', ' ') : ''));
+            jQuery(".thankyou_address").html(decodeURI(customerInfo.address ? customerInfo.address.replaceAll('+', ' ') : ''));
+            jQuery(".thankyou_address2").html(decodeURI(customerInfo.address2 ? customerInfo.address2.replaceAll('+', ' ') : ''));
+            jQuery(".thankyou_city").html(decodeURI(customerInfo.city ? customerInfo.city.replaceAll('+', ' ') : ''));
+            jQuery(".thankyou_zip").html(decodeURI(customerInfo.zip ? customerInfo.zip.replaceAll('+', ' ') : ''));
+            jQuery(".thankyou_state").html(decodeURI(customerInfo.state ? customerInfo.state.replaceAll('+', ' ') : ''));
+            jQuery(".thankyou_country").html(decodeURI(customerInfo.country ? customerInfo.country.replaceAll('+', ' ') : ''));
+            jQuery(".thankyou_phone").html(decodeURI(customerInfo.phone ? customerInfo.phone.replaceAll('+', ' ') : ''));
+        
+
+
+            cartItems.forEach(element => {
+                var item = String(itemTemplate.text());
+                item = item.replace('{{image}}', element.image)
+                .replace('{{quantity}}', element.quantity)
+                .replace('{{items_price}}', (element.quantity * element.price).toFixed(2))
+                .replace('{{id}}', element.id)
+                .replace('{{id}}', element.id)
+                .replace('{{id}}', element.id)
+                .replace('{{title}}', element.name)
+                .replace('{{index}}', index)
+                .replace('{{price}}', element.price);
+        
+                thankyou.find('.thankyou_cart-items tbody').append(item);
+                index++;
+            });
+
+                    
+            jQuery('.cart_total-price').html((function() {
+                var total = 0;
+                cartItems.forEach(element => {
+                    total = ((total *1) + ((element.quantity * element.price).toFixed(2) *1)).toFixed(2);
+                });
+                return total;
+            })());
+        }
+
+        window.__ecomm.removeItem('cart_items');
+    }
+
+    
     
     jQuery('.shop_add-cart').on('click', function(e) {
         window.shop.cart.addItem(e.target.dataset.productId);
@@ -212,6 +340,7 @@ window.addEventListener('load', function(e) {
     jQuery('.cart_item_add').on('click', function(e) {
         window.shop.cart.addItemQuantity(e.target.dataset.productId);
         var prodItem = window.shop.cart.getItem(e.target.dataset.productId);
+        console.log(e.target, prodItem);
         jQuery(e.target).parent().find('input.quantity').val(prodItem.quantity);
         var parentTr = jQuery(this).closest('tr');
         parentTr.find('.item_price').html('$' + (prodItem.price).toFixed(2))
@@ -237,9 +366,15 @@ window.addEventListener('load', function(e) {
 
 
 function refreshCartUi() {
-    jQuery('.shop_cart-count').html(window.__ecomm.getItem("cart_items").length);
+    var cartItems = window.__ecomm.getItem('cart_items');
+    jQuery('.shop_cart-count').html((function() {
+        var total = 0;
+        cartItems.forEach(element => {
+            total = ((total *1) + (element.quantity));
+        });
+        return total;
+    })());
     jQuery('.cart_total-price').html((function() {
-        var cartItems = window.__ecomm.getItem('cart_items');
         var total = 0;
         cartItems.forEach(element => {
             total = ((total *1) + ((element.quantity * element.price).toFixed(2) *1)).toFixed(2);
@@ -249,3 +384,30 @@ function refreshCartUi() {
 }
 
 
+function getParams ()
+{
+    var result = {};
+    var tmp = [];
+
+    location.search
+        .substr (1)
+        .split ("&")
+        .forEach (function (item)
+        {
+            tmp = item.split ("=");
+            result [tmp[0]] = decodeURIComponent (tmp[1]);
+        });
+
+    return result;
+}
+
+function makeid(length) {
+    var result           = '';
+    var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    var charactersLength = characters.length;
+    for ( var i = 0; i < length; i++ ) {
+      result += characters.charAt(Math.floor(Math.random() * 
+ charactersLength));
+   }
+   return result;
+}
